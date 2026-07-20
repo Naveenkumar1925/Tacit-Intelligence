@@ -23,12 +23,15 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT tacit_id      IF NOT EXISTS FOR (t:TacitKnowledge) REQUIRE t.claim_id IS UNIQUE",
     "CREATE CONSTRAINT inspection_id IF NOT EXISTS FOR (i:InspectionRecord) REQUIRE i.record_id IS UNIQUE",
     "CREATE CONSTRAINT alert_id      IF NOT EXISTS FOR (a:Alert)     REQUIRE a.alert_id IS UNIQUE",
+    "CREATE CONSTRAINT clause_id     IF NOT EXISTS FOR (c:Clause)    REQUIRE c.clause_id IS UNIQUE",
+    "CREATE CONSTRAINT ncr_id        IF NOT EXISTS FOR (n:NCR)       REQUIRE n.ncr_id IS UNIQUE",
 ]
 
 VECTOR_INDEXES = [
     ("chunk_embedding", "Chunk", "embedding"),
     ("procedure_embedding", "Procedure", "embedding"),
     ("tacit_embedding", "TacitKnowledge", "embedding"),
+    ("clause_embedding", "Clause", "embedding"),
 ]
 
 FULLTEXT = "CREATE FULLTEXT INDEX chunk_text IF NOT EXISTS FOR (c:Chunk) ON EACH [c.text]"

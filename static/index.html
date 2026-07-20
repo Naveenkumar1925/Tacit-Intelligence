@@ -214,12 +214,14 @@ function citeTitle(c){
 
 function openCite(n){
   const c = (window._lastCites||{})[n]; if(!c) return;
-  if(c.kind === 'chunk'){
+  if(c.kind === 'chunk' || c.kind === 'clause'){
     window.open(`/api/doc/${c.doc}#page=${c.page}`, '_blank');
   } else if(c.kind === 'tacit'){
     playAudio(c.audio, c.t_start);
+  } else if(c.kind === 'kpi'){
+    alert(`${c.label}\n\nComputed live from the structured quality store — numbers are typed data, never embedded.\nAudit-trail query:\n${c.query||''}`);
   } else {
-    alert(`${c.label}\n\nEvidence: ${(c.wo_ids||[]).join(', ') || 'graph traversal'}\nhop distance: ${c.hop ?? '-'}`);
+    alert(`${c.label}\n\nEvidence: ${(c.wo_ids||c.ncr_ids||[]).join(', ') || 'graph traversal'}\nhop distance: ${c.hop ?? '-'}`);
   }
 }
 

@@ -120,10 +120,12 @@ def api_stats():
 
 @app.get("/api/doc/{doc_id}")
 def api_doc(doc_id: str):
-    path = CORPUS / "procedures" / f"{doc_id}.pdf"
-    if not path.exists():
-        raise HTTPException(404)
-    return FileResponse(path, media_type="application/pdf")
+    name = Path(doc_id).name
+    for folder in ("procedures", "qms"):
+        path = CORPUS / folder / f"{name}.pdf"
+        if path.exists():
+            return FileResponse(path, media_type="application/pdf")
+    raise HTTPException(404)
 
 
 @app.get("/api/audio/{name}")

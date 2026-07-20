@@ -28,7 +28,7 @@ from neo4j import GraphDatabase
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import (NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE,
-                    OLLAMA_BASE_URL, LLM_MODEL, EMBED_MODEL)
+                    OLLAMA_BASE_URL, LLM_MODEL, EMBED_MODEL, STANDARDS_PACK)
 from resolve import find_mentions
 
 TOP_K = 8
@@ -55,16 +55,27 @@ CALL () {
   RETURN collect({id: node.chunk_id, text: node.text, doc: node.doc_id,
                   page: node.page, score: score}) AS sparse
 }
-WITH dense, sparse
+CALL () {
+  CALL db.index.vector.queryNodes('clause_embedding', 3, $qvec)
+  YIELD node, score
+  RETURN collect({clause_id: node.clause_id, title: node.title, text: node.text,
+                  page: node.page, score: score}) AS sim_clauses
+}
+CALL () {
+  MATCH (cl:Clause) WHERE cl.clause_id IN $clause_ids
+  RETURN collect({clause_id: cl.clause_id, title: cl.title, text: cl.text,
+                  page: cl.page, score: 1.0}) AS exact_clauses
+}
+WITH dense, sparse, sim_clauses, exact_clauses
 // anchors: tags named in the question + equipment mentioned by top dense seeds
 UNWIND (CASE WHEN size(dense) = 0 THEN [null] ELSE dense[..3] END) AS d
 OPTIONAL MATCH (:Chunk {chunk_id: d.id})-[:MENTIONS]->(me:Equipment)
-WITH dense, sparse,
+WITH dense, sparse, sim_clauses, exact_clauses,
      [t IN collect(DISTINCT me.tag) WHERE t IS NOT NULL] + $tags AS anchor_tags
 UNWIND (CASE WHEN size(anchor_tags) = 0 THEN [null] ELSE anchor_tags END) AS tag
 OPTIONAL MATCH (e:Equipment {tag: tag})
-WITH dense, sparse, collect(DISTINCT e) AS anchors
-RETURN dense, sparse,
+WITH dense, sparse, sim_clauses, exact_clauses, collect(DISTINCT e) AS anchors
+RETURN dense, sparse, sim_clauses, exact_clauses,
   [e IN anchors | {
     tag: e.tag, class: e.iso14224_class, criticality: e.criticality,
     aliases: e.aliases, service: e.service,
@@ -79,6 +90,13 @@ RETURN dense, sparse,
     inspections: [(i:InspectionRecord)-[:ON]->(e) |
       {record_id: i.record_id, date: toString(i.date), result: i.result,
        valid_until: toString(i.valid_until)}],
+    ncrs: [(x:NCR)-[:AGAINST]->(e) |
+      {ncr_id: x.ncr_id, date: toString(x.date), description: x.description,
+       status: x.status,
+       clause: head([(x)-[:CITES]->(c:Clause) | c.clause_id])}],
+    kpis: [(q:QualityKPI)-[:FOR]->(e) |
+      {process_id: q.process_id, metric: q.metric, period: q.period,
+       value: q.value}],
     procedures: [(p:Procedure)-[:APPLIES_TO]->(e) | p.sop_id],
     siblings: [(:Area)-[:CONTAINS]->(s:Equipment)
                WHERE s.iso14224_class = e.iso14224_class AND s.tag <> e.tag |
@@ -107,7 +125,11 @@ def get_register(session):
             "MATCH (a:Area)-[:CONTAINS]->(e:Equipment) "
             "RETURN replace(e.tag,'-','') AS key, e.tag AS tag, "
             "e.iso14224_class AS klass, a.name AS area").data()
-        _register = {"by_key": {r["key"]: r["tag"] for r in items}, "items": items}
+        processes = session.run(
+            "MATCH (p:Process) RETURN p.process_id AS pid, "
+            "p.description AS descr, p.tag AS tag").data()
+        _register = {"by_key": {r["key"]: r["tag"] for r in items},
+                     "items": items, "processes": processes}
     return _register
 
 
@@ -123,6 +145,23 @@ AREA_PHRASES = {"process area": "Area-1", "area-1": "Area-1", "area 1": "Area-1"
 HISTORY_SHAPE_RE = re.compile(
     r"\b(fail|failure|history|happened|problem|issue|downtime|trip|broke|"
     r"repeat|repair|corrective|inspect|expired|maintenance record)", re.I)
+
+# QMS retrieval router: clause references and quality/analytics intent
+CLAUSE_NUM_RE = re.compile(r"\b(\d+\.\d+(?:\.\d+)?)\b")
+QUALITY_RE = re.compile(
+    r"\b(cpk|cp k|ppm|capab|in control|out of control|defect|quality|clause|"
+    r"nonconform|ncr|audit|complian|standard requirement)\b", re.I)
+
+
+def process_anchor_tags(question, register):
+    """PRC ids or process descriptions ('feed flow control') anchor equipment."""
+    q = question.lower()
+    tags, pids = [], []
+    for p in register.get("processes", []):
+        if p["pid"].lower() in q or (p["descr"] and p["descr"].lower() in q):
+            tags.append(p["tag"])
+            pids.append(p["pid"])
+    return tags, pids
 
 
 def class_anchor_tags(question, register):
@@ -211,7 +250,7 @@ def classify_intent(question, tags):
     return "general", {"text": 0.5, "graph": 0.5}
 
 
-def build_evidence(fused, graph, blend, modes=()):
+def build_evidence(fused, graph, blend, modes=(), clauses=(), quality=False):
     """Number the evidence blocks; return (blocks, citations)."""
     blocks, citations = [], []
 
@@ -258,6 +297,41 @@ def build_evidence(fused, graph, blend, modes=()):
                         for w in corr)
                     add("history", label, lines, tag=eq["tag"], hop=hop,
                         wo_ids=[w["wo_id"] for w in corr])
+                if quality and eq.get("kpis"):
+                    by_pm = {}
+                    for k in eq["kpis"]:
+                        by_pm.setdefault((k["process_id"], k["metric"]),
+                                         []).append(k)
+                    kpi_lines = []
+                    for (pid, metric), vals in sorted(by_pm.items()):
+                        vals.sort(key=lambda k: k["period"])
+                        series = " | ".join(f"{v['period']}={v['value']}"
+                                            for v in vals[-4:])
+                        flag = ""
+                        d = STANDARDS_PACK["kpi_defs"].get(metric, {})
+                        if metric == "CPK" and vals[-1]["value"] < d.get("min", 0):
+                            flag = (f"   -> BELOW {d['min']} MINIMUM: NOT CAPABLE "
+                                    "(clause 9.1)")
+                        if (metric == "PPM" and len(vals) >= 3 and
+                                vals[-1]["value"] > vals[-2]["value"]
+                                > vals[-3]["value"]):
+                            flag = ("   -> RISING 3 CONSECUTIVE MONTHS: "
+                                    "INVESTIGATE (clause 9.1)")
+                        kpi_lines.append(f"  {pid} {metric}: {series}{flag}")
+                    add("kpi", f"{eq['tag']} computed quality KPIs "
+                        "(structured store — computed, never embedded)",
+                        "\n".join(kpi_lines), tag=eq["tag"], hop=0,
+                        query="MATCH (q:QualityKPI {tag: $tag}) RETURN q.process_id,"
+                              " q.metric, q.period, q.value ORDER BY q.period")
+                if quality and eq.get("ncrs"):
+                    ncr_lines = "\n".join(
+                        f"  {n['ncr_id']}  {n['date']}  [{n['status']}] clause "
+                        f"{n['clause']}: {n['description'][:110]}"
+                        for n in sorted(eq["ncrs"], key=lambda n: n["date"],
+                                        reverse=True)[:4])
+                    add("ncr", f"{eq['tag']} nonconformance register "
+                        "(clause-linked)", ncr_lines, tag=eq["tag"], hop=1,
+                        ncr_ids=[n["ncr_id"] for n in eq["ncrs"][:4]])
                 if eq.get("inspections"):
                     today = time.strftime("%Y-%m-%d")
                     insp_lines = "\n".join(
@@ -281,8 +355,16 @@ def build_evidence(fused, graph, blend, modes=()):
                     audio=t["audio"], t_start=t["t_start"], lang=t["lang"],
                     claim_id=t["claim_id"], hop=hop)
 
-    # spec 8: graph facts rank by hop distance from the anchor — for a question
-    # that names equipment, its history leads the evidence; text leads otherwise
+    def add_clauses():
+        for cl in clauses:
+            add("clause", f"{STANDARDS_PACK['std_id']} clause {cl['clause_id']} "
+                f"— {cl['title']}", cl["text"][:1500],
+                clause_id=cl["clause_id"], page=cl["page"],
+                doc=STANDARDS_PACK["std_id"], score=round(cl["score"], 3))
+
+    # clauses are the most precise evidence when present; then spec 8 ordering:
+    # graph facts lead for equipment-anchored questions, text leads otherwise
+    add_clauses()
     if blend["graph"] >= 0.5:
         add_graph()
         add_chunks()
@@ -337,13 +419,27 @@ def _retrieve(question, mode="full"):
         register = get_register(s)
         by_key = register["by_key"]
         tags = sorted({by_key[k] for k in find_mentions(question) if k in by_key})
+        proc_tags, proc_ids = process_anchor_tags(question, register)
+        tags = sorted(set(tags) | set(proc_tags))
         if not tags:
             tags = class_anchor_tags(question, register)
+        clause_ids = CLAUSE_NUM_RE.findall(question)
+        quality = bool(QUALITY_RE.search(question) or clause_ids or proc_ids)
         qvec = ollama("/api/embed", {"model": EMBED_MODEL, "input": [question]}
                       )["embeddings"][0]
         rec = s.run(RETRIEVAL_QUERY, qvec=qvec, ftq=lucene_sanitise(question),
-                    tags=tags, k=TOP_K).single()
+                    tags=tags, clause_ids=clause_ids, k=TOP_K).single()
     dense, sparse, graph = rec["dense"], rec["sparse"], rec["graph"]
+
+    # router: exact clause references always surface; similar clauses join when
+    # the question is quality-shaped or similarity is unambiguous
+    clauses, seen = [], set()
+    for cl in list(rec["exact_clauses"]) + [
+            c for c in rec["sim_clauses"] if quality or c["score"] >= 0.80]:
+        if cl["clause_id"] not in seen:
+            seen.add(cl["clause_id"])
+            clauses.append(cl)
+    clauses = clauses[:3]
 
     # ablation modes for the eval harness (spec Day 3): starve one leg and
     # re-rank honestly with what remains
@@ -355,9 +451,12 @@ def _retrieve(question, mode="full"):
         graph = []
 
     intent, blend = classify_intent(question, tags)
+    if quality and intent == "general":
+        intent = "quality"
     modes = detect_modes(question)
     fused = rrf_fuse(dense, sparse)
-    blocks, citations = build_evidence(fused, graph, blend, modes)
+    blocks, citations = build_evidence(fused, graph, blend, modes,
+                                       clauses=clauses, quality=quality)
     return {"t0": t0, "tags": tags, "dense": dense, "sparse": sparse,
             "graph": graph, "intent": intent, "blend": blend, "modes": modes,
             "fused": fused, "blocks": blocks, "citations": citations}

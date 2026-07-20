@@ -31,7 +31,7 @@ from neo4j import GraphDatabase
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import (NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE,
-                    OLLAMA_BASE_URL, LLM_MODEL,
+                    OLLAMA_BASE_URL, LLM_MODEL, STANDARDS_PACK,
                     RISK_RATIO_THRESHOLD, CHRONIC_COUNT, CHRONIC_WINDOW_DAYS)
 
 TODAY = date.today                       # callable so tests can monkeypatch
@@ -238,6 +238,54 @@ def detect_divergence(session):
     return alerts
 
 
+def detect_quality(session):
+    """QMS checks: capability below minimum, PPM rising. Arithmetic + Cypher
+    over the structured store; clause mapping traverses NCR -> Clause."""
+    rows = session.run("""
+        MATCH (q:QualityKPI)-[:OF]->(p:Process)
+        RETURN q.process_id AS pid, p.description AS descr, q.tag AS tag,
+               q.metric AS metric, q.period AS period, q.value AS value
+        ORDER BY q.period
+    """).data()
+    clause_by_tag = {r["tag"]: r["clause"] for r in session.run(
+        "MATCH (x:NCR {status:'open'})-[:AGAINST]->(e:Equipment), "
+        "(x)-[:CITES]->(c:Clause) RETURN e.tag AS tag, c.clause_id AS clause")}
+    ncrs_by_tag = defaultdict(list)
+    for r in session.run("MATCH (x:NCR)-[:AGAINST]->(e:Equipment) "
+                         "RETURN e.tag AS tag, x.ncr_id AS ncr_id"):
+        ncrs_by_tag[r["tag"]].append(r["ncr_id"])
+
+    series = defaultdict(list)
+    meta = {}
+    for r in rows:
+        series[(r["pid"], r["metric"])].append(r["value"])
+        meta[r["pid"]] = (r["tag"], r["descr"])
+    alerts = []
+    kd = STANDARDS_PACK["kpi_defs"]
+    for (pid, metric), vals in sorted(series.items()):
+        tag, descr = meta[pid]
+        if metric == "CPK" and vals and vals[-1] < kd["CPK"]["min"]:
+            alerts.append({
+                "alert_id": f"capability-{pid}", "kind": "capability",
+                "severity": "high", "tag": tag, "process_id": pid,
+                "process": descr, "latest_cpk": vals[-1],
+                "minimum": kd["CPK"]["min"], "trend_last_3": vals[-3:],
+                "clause": clause_by_tag.get(tag, "9.1"),
+                "evidence_ncrs": ncrs_by_tag.get(tag, []),
+            })
+        if (metric == "PPM" and len(vals) >= kd["PPM"]["rising_months"]
+                and all(vals[-i] > vals[-i - 1]
+                        for i in range(1, kd["PPM"]["rising_months"]))):
+            alerts.append({
+                "alert_id": f"ppm-trend-{pid}", "kind": "ppm_trend",
+                "severity": "high", "tag": tag, "process_id": pid,
+                "process": descr, "trend_last_4": vals[-4:],
+                "clause": clause_by_tag.get(tag, "9.1"),
+                "evidence_ncrs": ncrs_by_tag.get(tag, []),
+            })
+    return alerts
+
+
 def write_alerts(session, alerts):
     for a in alerts:
         session.run("""
@@ -261,6 +309,9 @@ def write_alerts(session, alerts):
         for cl in a.get("evidence_claims", []):
             session.run("MATCH (al:Alert {alert_id: $id}), (t:TacitKnowledge {claim_id: $cl}) "
                         "MERGE (al)-[:EVIDENCED_BY]->(t)", id=a["alert_id"], cl=cl)
+        for ncr in a.get("evidence_ncrs", []):
+            session.run("MATCH (al:Alert {alert_id: $id}), (x:NCR {ncr_id: $ncr}) "
+                        "MERGE (al)-[:EVIDENCED_BY]->(x)", id=a["alert_id"], ncr=ncr)
 
 
 def sweep(write=True, with_narrative=True):
@@ -268,7 +319,7 @@ def sweep(write=True, with_narrative=True):
                                   notifications_min_severity="OFF")
     with driver.session(database=NEO4J_DATABASE) as s:
         wos = fetch(s)
-        alerts = detect_reliability(wos) + detect_divergence(s)
+        alerts = detect_reliability(wos) + detect_divergence(s) + detect_quality(s)
         if with_narrative:
             existing = {r["id"]: r["n"] for r in s.run(
                 "MATCH (al:Alert) WHERE al.narrative <> '' "

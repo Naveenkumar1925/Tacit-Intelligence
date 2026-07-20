@@ -26,3 +26,17 @@ CHRONIC_WINDOW_DAYS = 365
 # --- Chunking (spec 8, P1) ---------------------------------------------------
 CHUNK_TARGET_TOKENS = 600
 CHUNK_OVERLAP = 0.15
+
+# --- QMS standards pack (industry-agnostic swap point) -----------------------
+# Swap this pack per industry: the graph schema and agent logic stay identical,
+# only the ingested standard and the KPI definitions change.
+STANDARDS_PACK = {
+    "std_id": "QS-001",
+    "overlay": "automotive customer overlay (IATF 16949 aligned)",
+    "kpi_defs": {
+        "CPK": {"label": "process capability (Cpk)", "min": 1.33,
+                "rule": "below min is not capable"},
+        "PPM": {"label": "defect rate (PPM)", "rising_months": 3,
+                "rule": "rising for N consecutive months triggers investigation"},
+    },
+}

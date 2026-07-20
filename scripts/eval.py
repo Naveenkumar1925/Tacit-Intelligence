@@ -53,6 +53,13 @@ CASES = [
      "abstain": False, "cite_any": ["CV-301A"]},
     {"q": "Have any of the heat exchangers overheated?",
      "abstain": False, "cite_any": ["HX-"]},
+    # QMS integration (af54ced): clause RAG, analytics leg, both-legs router
+    {"q": "What does clause 8.5.1 require?",
+     "abstain": False, "cite_any": ["8.5.1"]},
+    {"q": "Is the feed flow control process still capable?",
+     "abstain": False, "cite_any": ["CV-301A"]},
+    {"q": "Why is PPM rising on the feed transfer process?",
+     "abstain": False, "cite_any": ["P-101A", "8.5.1", "NCR-001"]},
 ]
 
 MODES = ["full", "dense", "bm25", "no_graph"]

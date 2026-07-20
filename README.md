@@ -33,6 +33,21 @@ demo day and regenerate.
 - ASR: faster-whisper large-v3, CPU int8, `task="translate"`.
 - Neo4j 5.x single datastore (vector + full-text indexes, no separate vector DB).
 
+## QMS integration (PS-8 suggested technology)
+
+Specialization of the same architecture — see `datagen/generate_qms.py`,
+`pipeline/load_qms.py`, and the router/analytics legs in `pipeline/ask.py`:
+
+- **Clause-aware chunking**: QS-001 (original text) splits on clause numbers,
+  not token windows; each clause is a `:Clause` node with an embedding.
+- **Numbers are never embedded**: Cpk/PPM live as `:QualityKPI` typed rows; the
+  analytics leg computes over them (thresholds from `STANDARDS_PACK` in
+  config — the industry-agnostic swap point) and every computed figure carries
+  its query as the audit trail.
+- **Compliance mapping**: `:NCR` links equipment → clause, so "why is PPM
+  rising" traverses to the governing clause (8.5.1) and the monsoon strainer
+  story. Watch adds `capability` (Cpk < 1.33) and `ppm_trend` alerts.
+
 ## Status
 
 - [x] Day 1: corpus generator + all 4 planted patterns (verified)

@@ -259,6 +259,15 @@ async function loadAlerts(){
           `<div style="font-size:12px;margin:4px 0">🗣 <span class="evlink"
              onclick="playAudio('${c.audio}',${c.t_start})">${c.audio} @ ${Math.round(c.t_start)}s</span>
              <span class="lang">${c.lang}</span> — ${esc(c.text)}</div>`).join('');
+    } else if(a.kind === 'capability'){
+      body = `<div style="font-size:12px;margin-top:4px">
+        ${d.process_id} (${esc(d.process||'')}) · Cpk <b style="color:var(--bad)">${d.latest_cpk}</b>
+        vs minimum ${d.minimum} · trend ${(d.trend_last_3||[]).join(' → ')}
+        · governs: clause <b>${d.clause}</b></div>`;
+    } else if(a.kind === 'ppm_trend'){
+      body = `<div style="font-size:12px;margin-top:4px">
+        ${d.process_id} (${esc(d.process||'')}) · PPM ${(d.trend_last_4||[]).join(' → ')}
+        <b style="color:var(--bad)">rising</b> · governs: clause <b>${d.clause}</b></div>`;
     } else if(a.kind === 'sibling_exposure'){
       body = `<div style="font-size:12px;margin-top:4px">
         ${d.siblings?.length||0} sister units · confirmed history:

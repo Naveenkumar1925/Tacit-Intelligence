@@ -1,0 +1,848 @@
+<title>Plant Brain — System Architecture</title>
+<style>
+  :root {
+    --ground:   #EDF1F0;
+    --paper:    #FAFBFA;
+    --sheet:    #FBFCFA;
+    --ink:      #131A1E;
+    --muted:    #5A686E;
+    --faint:    #8C9A9E;
+    --rule:     #C7D1CE;
+    --hair:     #DDE4E1;
+    --accent:   #0F6E7E;
+    --accent-2: #0B5361;
+    --warn:     #94620F;
+    --crit:     #A32E24;
+    --ok:       #2F6B41;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans:  "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono:  ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+
+    --measure: 74ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0D1315; --paper: #131B1E; --ink: #E2EAE7; --muted: #94A3A6;
+      --faint: #6E7E82; --rule: #2A3639; --hair: #202B2E;
+      --accent: #4FB3C4; --accent-2: #7FCBD8;
+      --warn: #D0A24A; --crit: #E0796C; --ok: #67B183;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0D1315; --paper: #131B1E; --ink: #E2EAE7; --muted: #94A3A6;
+    --faint: #6E7E82; --rule: #2A3639; --hair: #202B2E;
+    --accent: #4FB3C4; --accent-2: #7FCBD8;
+    --warn: #D0A24A; --crit: #E0796C; --ok: #67B183;
+  }
+  :root[data-theme="light"] {
+    --ground: #EDF1F0; --paper: #FAFBFA; --ink: #131A1E; --muted: #5A686E;
+    --faint: #8C9A9E; --rule: #C7D1CE; --hair: #DDE4E1;
+    --accent: #0F6E7E; --accent-2: #0B5361;
+    --warn: #94620F; --crit: #A32E24; --ok: #2F6B41;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.62;
+    margin: 0; padding: 0 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+
+  /* ---- drawing title block ---- */
+  .titleblock {
+    border: 1.5px solid var(--ink); background: var(--paper);
+    margin: 40px 0 8px;
+  }
+  .titleblock .top { padding: 26px 28px 20px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.1; letter-spacing: -.01em; margin: 0 0 10px; text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 16.5px; color: var(--muted); margin: 0; max-width: var(--measure);
+  }
+  .fields {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    border-top: 1.5px solid var(--ink);
+  }
+  .fields div {
+    padding: 9px 14px; border-right: 1px solid var(--hair);
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  }
+  .fields div:last-child { border-right: 0; }
+  .fields b {
+    display: block; color: var(--faint); font-weight: 400;
+    letter-spacing: .1em; text-transform: uppercase; font-size: 10px;
+  }
+
+  /* ---- structure ---- */
+  h2 {
+    font-family: var(--serif); font-size: 27px; font-weight: 600;
+    line-height: 1.2; margin: 0; text-wrap: balance;
+  }
+  .sec { margin-top: 56px; }
+  .sec > header {
+    display: flex; gap: 16px; align-items: baseline;
+    border-top: 1.5px solid var(--ink); padding-top: 12px; margin-bottom: 18px;
+  }
+  .sec > header .num {
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+    letter-spacing: .1em; flex: none; padding-top: 5px;
+  }
+  h3 {
+    font-family: var(--sans); font-size: 15px; font-weight: 650;
+    letter-spacing: .01em; margin: 30px 0 6px;
+  }
+  p { margin: 0 0 14px; max-width: var(--measure); }
+  ul { margin: 0 0 14px; padding-left: 20px; max-width: var(--measure); }
+  li { margin-bottom: 7px; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code {
+    font-family: var(--mono); font-size: .88em;
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    padding: 1px 5px; border-radius: 3px;
+  }
+  strong { font-weight: 650; }
+
+  /* ---- drawing sheets (diagrams) ---- */
+  .sheet {
+    background: var(--sheet); border: 1px solid var(--rule);
+    margin: 22px 0 26px; overflow: hidden;
+  }
+  :root[data-theme="dark"] .sheet, .sheet { }
+  @media (prefers-color-scheme: dark) { .sheet { background: #F7F9F7; } }
+  :root[data-theme="dark"] .sheet { background: #F7F9F7; }
+  :root[data-theme="light"] .sheet { background: var(--sheet); }
+  .sheet .frame { overflow-x: auto; padding: 22px 18px 8px; }
+  .sheet .cap {
+    border-top: 1px solid #D5DEDB; padding: 8px 14px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .07em;
+    text-transform: uppercase; color: #4A585E; background: #EFF3F1;
+    display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  }
+  .sheet .cap span:last-child { color: #78868B; text-transform: none; letter-spacing: 0; }
+  .mermaid { display: flex; justify-content: center; min-width: 560px; }
+
+  /* ---- tables ---- */
+  .tablewrap { overflow-x: auto; margin: 16px 0 22px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 480px; }
+  th, td {
+    text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--hair);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint); font-weight: 400;
+    border-bottom: 1px solid var(--rule);
+  }
+  td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  td.t { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+
+  /* ---- feature entries ---- */
+  .feat { border-top: 1px solid var(--hair); padding: 16px 0 4px; }
+  .feat:first-of-type { border-top: 1px solid var(--rule); }
+  .feat h4 {
+    font-family: var(--sans); font-size: 15.5px; font-weight: 650; margin: 0 0 5px;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .feat h4 .id {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    letter-spacing: .08em; flex: none;
+  }
+  .feat p { margin: 0 0 10px; }
+  .why {
+    border-left: 2px solid var(--accent); padding-left: 12px;
+    color: var(--muted); font-size: 14.5px; max-width: var(--measure);
+  }
+  .why b { color: var(--ink); font-weight: 650; }
+
+  .pill {
+    display: inline-block; font-family: var(--mono); font-size: 10px;
+    letter-spacing: .09em; text-transform: uppercase; padding: 2px 7px;
+    border: 1px solid currentColor; border-radius: 2px; vertical-align: 2px;
+  }
+  .pill.live { color: var(--ok); }
+  .pill.pend { color: var(--warn); }
+
+  .note {
+    background: var(--paper); border: 1px solid var(--rule);
+    border-left: 3px solid var(--warn); padding: 14px 16px; margin: 20px 0;
+    font-size: 14.5px; max-width: var(--measure);
+  }
+  .note b { font-weight: 650; }
+  .toc {
+    background: var(--paper); border: 1px solid var(--rule); padding: 16px 20px;
+    margin: 26px 0 0; columns: 2; column-gap: 34px;
+  }
+  .toc a { display: block; text-decoration: none; font-size: 14px; padding: 3px 0;
+           break-inside: avoid; }
+  .toc a:hover { text-decoration: underline; }
+  .toc a .n { font-family: var(--mono); font-size: 11px; color: var(--faint);
+              margin-right: 8px; }
+  @media (max-width: 620px) { .toc { columns: 1; } }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px;
+  }
+</style>
+
+<div class="wrap">
+
+<div class="titleblock">
+  <div class="top">
+    <p class="eyebrow">ET AI Hackathon 2026 · Problem Statement 8</p>
+    <h1>Plant Brain</h1>
+    <p class="standfirst">A unified industrial knowledge platform. It ingests heterogeneous
+    plant documents into a single knowledge graph, answers questions with citations that
+    resolve to a page or an audio timestamp, watches equipment history for failure patterns,
+    captures retiring operators' spoken knowledge in any language, and maps quality findings
+    back to the standard clause that governs them. Fully local — no cloud API at any point.</p>
+  </div>
+  <div class="fields">
+    <div><b>Datastore</b> Neo4j 5.26</div>
+    <div><b>Reasoning</b> qwen2.5:7b-instruct</div>
+    <div><b>Embeddings</b> nomic-embed-text · 768d</div>
+    <div><b>Speech</b> faster-whisper large-v3</div>
+    <div><b>Footprint</b> 6 GB GPU</div>
+  </div>
+</div>
+
+<nav class="toc">
+  <a href="#s1"><span class="n">01</span>System architecture</a>
+  <a href="#s2"><span class="n">02</span>Knowledge graph schema</a>
+  <a href="#s3"><span class="n">03</span>The four agents</a>
+  <a href="#s4"><span class="n">04</span>Retrieval router</a>
+  <a href="#s5"><span class="n">05</span>QMS integration</a>
+  <a href="#s6"><span class="n">06</span>Feature inventory</a>
+  <a href="#s7"><span class="n">07</span>Measured results</a>
+  <a href="#s8"><span class="n">08</span>Scale &amp; status</a>
+</nav>
+
+<!-- ==================== 1 ==================== -->
+<section class="sec" id="s1">
+  <header><span class="num">01</span><h2>System architecture</h2></header>
+
+  <p>Four agents operate on a <strong>blackboard</strong>: no agent ever calls another. They
+  read and write shared graph state, which means a new agent can be added without modifying
+  a single existing one. Data flows in one direction — generated corpus, into the graph,
+  out through the query agents.</p>
+
+  <p>The critical structural decision is the <strong>split ingestion path</strong>. Clean
+  tabular data (equipment registers, work orders, KPIs) loads directly to typed nodes with
+  no LLM involvement whatsoever; only narrative documents go through chunking and embedding.
+  This drops the 7B model's workload from roughly 500 chunks to about 40, cutting extraction
+  from ~50 minutes to under 5, and removes hallucination risk from the cleanest data in
+  the system.</p>
+
+  <div class="sheet">
+    <div class="frame">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E7EEEC','primaryTextColor':'#131A1E','primaryBorderColor':'#7E9299','lineColor':'#6C7F85','fontFamily':'Segoe UI, sans-serif','fontSize':'13px','clusterBkg':'#F2F6F4','clusterBorder':'#B9C7C4'}}}%%
+flowchart TB
+  subgraph GEN["CORPUS — seeded, deterministic, self-verifying"]
+    direction LR
+    G1["generate_corpus.py<br/>12 equipment · 119 work orders<br/>6 inspections · 8 SOP PDFs"]
+    G2["generate_qms.py<br/>QS-001 · 9 clauses<br/>72 KPIs · 6 NCRs"]
+    G3["3 voice clips<br/>Tamil · Hindi · +1"]
+  end
+
+  subgraph ING["P1 · INGEST &amp; BUILD  +  P2 · VOICE"]
+    direction LR
+    I1["Structured load<br/><b>no LLM</b> — typed nodes"]
+    I2["Narrative<br/>chunk → regex → LLM bind"]
+    I3["Clause-aware<br/>split on clause number"]
+    I4["Voice<br/>translate → tag regex → claims"]
+    I5(["Entity resolution<br/>4 spellings → 1 node"])
+  end
+
+  subgraph STORE["NEO4J — single datastore, dual retrieval mode"]
+    direction LR
+    S1["VECTOR + FULL-TEXT<br/>Chunk · Procedure<br/>Clause · TacitKnowledge"]
+    S2["STRUCTURED TYPED<br/>Equipment · WorkOrder<br/>QualityKPI · NCR<br/><b>never embedded</b>"]
+  end
+
+  subgraph QRY["P3 · ASK  +  P4 · WATCH"]
+    direction LR
+    Q1["Ask — hybrid retrieval,<br/>graph expansion, analytics,<br/>cited synthesis"]
+    Q2["Watch — arithmetic detection<br/>on a 30-min timer;<br/>LLM only narrates"]
+  end
+
+  subgraph OUT["DELIVERY — FastAPI + responsive web"]
+    direction LR
+    O1["Chat + citations"]
+    O2["Alert panel"]
+    O3["Graph explorer"]
+  end
+
+  G1 --> I1
+  G1 --> I2
+  G2 --> I3
+  G3 --> I4
+  I1 --> I5
+  I2 --> I5
+  I3 --> I5
+  I4 --> I5
+  I5 --> STORE
+  STORE --> Q1
+  STORE --> Q2
+  Q2 -.->|writes :Alert back| STORE
+  Q1 --> O1
+  Q2 --> O2
+  STORE --> O3
+</pre>
+    </div>
+    <div class="cap"><span>Fig. 1 — System architecture</span><span>blackboard pattern · agents share graph state, never call each other</span></div>
+  </div>
+
+  <h3>Local model allocation</h3>
+  <p>The published spec assumed an 8 GB GPU; the build machine has 6 GB, so allocation was
+  re-benchmarked rather than assumed. The 7B model splits 82% GPU / 18% CPU and sustains
+  22–28 tokens/sec, which was measured as stable and therefore kept. A 4B alternative fit
+  entirely in VRAM but showed severe throughput variance (71 tok/s, then 4.9) and was
+  demoted to emergency fallback.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Model</th><th>Runs on</th><th class="n">Size</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td class="t">qwen2.5:7b-instruct</td><td>GPU 82% / CPU</td><td class="n">4.7 GB</td><td>Relation binding, transcript structuring, answer synthesis, alert narratives</td></tr>
+      <tr><td class="t">nomic-embed-text</td><td>GPU</td><td class="n">275 MB</td><td>All embeddings at 768 dimensions — locked, since changing it invalidates every vector index</td></tr>
+      <tr><td class="t">faster-whisper large-v3</td><td>CPU, int8</td><td class="n">1.5 GB</td><td>Speech → English in one pass. On CPU deliberately, so it never contends with the 7B for VRAM</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ==================== 2 ==================== -->
+<section class="sec" id="s2">
+  <header><span class="num">02</span><h2>Knowledge graph schema</h2></header>
+
+  <p>One Neo4j instance holds everything, but in two deliberately different forms. Document
+  content carries 768-dimension embeddings for semantic retrieval. Facts and measurements
+  are typed nodes queried by Cypher and computed over — <strong>never embedded as text</strong>,
+  because a vector search cannot do arithmetic or detect a trend.</p>
+
+  <div class="sheet">
+    <div class="frame">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E7EEEC','primaryTextColor':'#131A1E','primaryBorderColor':'#7E9299','lineColor':'#6C7F85','fontFamily':'Segoe UI, sans-serif','fontSize':'12px','clusterBkg':'#F2F6F4','clusterBorder':'#B9C7C4'}}}%%
+flowchart LR
+  Site["(:Site)"] -->|CONTAINS| Area["(:Area)"]
+  Area -->|CONTAINS| Eq["(:Equipment)<br/>tag · class<br/>criticality · aliases[]"]
+
+  WO["(:WorkOrder)<br/>date · type<br/>downtime_hrs"] -->|PERFORMED_ON| Eq
+  WO -->|RESULTED_IN| FM["(:FailureMode)<br/>ISO 14224 code"]
+  IR["(:InspectionRecord)<br/>valid_until"] -->|ON| Eq
+
+  Doc["(:Document)"] -->|HAS_CHUNK| Ch["(:Chunk)<br/><i>embedding</i>"]
+  Ch -->|MENTIONS| Eq
+  Proc["(:Procedure)<br/><i>embedding</i>"] -->|APPLIES_TO| Eq
+  TK["(:TacitKnowledge)<br/>lang · audio_id · t_start<br/><i>embedding</i>"] -->|APPLIES_TO| Eq
+
+  Std["(:Standard)"] -->|HAS_CLAUSE| Cl["(:Clause)<br/>clause_id<br/><i>embedding</i>"]
+  Cl -->|APPLIES_TO| Eq
+  NCR["(:NCR)"] -->|AGAINST| Eq
+  NCR -->|CITES| Cl
+  Prc["(:Process)"] -->|USES| Eq
+  KPI["(:QualityKPI)<br/>Cpk · PPM · period<br/><b>not embedded</b>"] -->|OF| Prc
+  KPI -->|FOR| Eq
+
+  Al["(:Alert)<br/>kind · severity"] -->|ABOUT| Eq
+  Al -->|EVIDENCED_BY| WO
+  Al -->|EVIDENCED_BY| Ch
+  Al -->|EVIDENCED_BY| TK
+</pre>
+    </div>
+    <div class="cap"><span>Fig. 2 — Graph schema</span><span>italic = carries a 768-d vector · 15 node labels · 16 relationship types</span></div>
+  </div>
+
+  <h3>The one schema rule that cannot be broken</h3>
+  <p><code>:TacitKnowledge</code> and <code>:Procedure</code> are separate labels and must stay
+  separate. Spoken operator experience is one person's unverified practice; a procedure is
+  approved policy. Merging them would be unsafe in a plant context — and keeping them apart
+  is the only reason divergence detection is possible at all.</p>
+
+  <h3>Live inventory</h3>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Node label</th><th class="n">Count</th><th>Node label</th><th class="n">Count</th></tr></thead>
+    <tbody>
+      <tr><td class="t">WorkOrder</td><td class="n">119</td><td class="t">Clause</td><td class="n">9</td></tr>
+      <tr><td class="t">QualityKPI</td><td class="n">72</td><td class="t">Document</td><td class="n">8</td></tr>
+      <tr><td class="t">Chunk</td><td class="n">24</td><td class="t">Procedure</td><td class="n">8</td></tr>
+      <tr><td class="t">Equipment</td><td class="n">12</td><td class="t">FailureMode</td><td class="n">7</td></tr>
+      <tr><td class="t">Alert</td><td class="n">7</td><td class="t">NCR</td><td class="n">6</td></tr>
+      <tr><td class="t">InspectionRecord</td><td class="n">6</td><td class="t">Process</td><td class="n">3</td></tr>
+      <tr><td class="t">Area</td><td class="n">2</td><td class="t">Site / Standard</td><td class="n">1 / 1</td></tr>
+      <tr><td class="t">TacitKnowledge</td><td class="n">0</td><td colspan="2" style="color:var(--warn)">awaiting voice recordings</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ==================== 3 ==================== -->
+<section class="sec" id="s3">
+  <header><span class="num">03</span><h2>The four agents</h2></header>
+
+  <h3>P1 · Ingest &amp; Build</h3>
+  <p>Takes the corpus directory, produces a populated graph, along three paths. <strong>Structured:</strong>
+  spreadsheets load straight to typed nodes — no LLM touches already-typed data. <strong>Narrative:</strong>
+  SOP PDFs chunk on heading and numbered-step boundaries at ~600 tokens with 15% overlap; a regex
+  pass extracts equipment tags first, and only then does the LLM bind relations between
+  entities that are already known, against a closed vocabulary. <strong>Entity resolution:</strong>
+  every tag is canonicalised and merged to one node carrying an alias list.</p>
+
+  <h3>P2 · Voice Capture <span class="pill pend">awaiting clips</span></h3>
+  <p>Audio in any language becomes typed <code>:TacitKnowledge</code> claims. Whisper runs with
+  <code>task="translate"</code>, so any source language reaches English in a single pass with no
+  separate translation model, preserving per-segment timestamps and the detected language.
+  Critically, <strong>ASR output is never trusted for equipment tags</strong> — spoken "P-101A"
+  transcribes as "pee one oh one ay", so the transcript is normalised for spelled-out digits and
+  passed through the tag regex, and the LLM is given only the verified candidates.</p>
+
+  <h3>P3 · Ask</h3>
+  <p>A question becomes a cited answer with a computed confidence score. Detailed in §04.</p>
+
+  <h3>P4 · Watch</h3>
+  <p>Runs on a 30-minute timer. <strong>Every detection is arithmetic and Cypher; the LLM only
+  writes the narrative afterwards.</strong> That separation is what makes findings defensible —
+  the numbers are never generated. Six detectors currently fire:</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Detector</th><th>Rule</th><th>Currently firing</th></tr></thead>
+    <tbody>
+      <tr><td class="t">overdue</td><td>MTBF from gaps between same-mode failures; alert when days-since-last ÷ MTBF ≥ 0.8</td><td>P-101A seal leakage — MTBF 86 d, ratio 0.91</td></tr>
+      <tr><td class="t">chronic</td><td>Same failure mode ≥ 3 times in 12 months</td><td>P-101A (4× SER), P-102A (4× VIB)</td></tr>
+      <tr><td class="t">sibling_exposure</td><td>On failure, find all same-class equipment; split into confirmed history vs. needs check</td><td>P-101A, P-102A — 5 sister units each</td></tr>
+      <tr><td class="t">divergence</td><td>Same-topic gate, then compare stated frequencies between procedure and operator claim</td><td>blocked on voice clips</td></tr>
+      <tr><td class="t">capability</td><td>Latest Cpk below the 1.33 minimum</td><td>PRC-301 — Cpk 1.21</td></tr>
+      <tr><td class="t">ppm_trend</td><td>Defect rate rising 3 consecutive months</td><td>PRC-101 — 240 → 310 → 420</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Procedure-vs-practice divergence — the differentiating finding</h3>
+  <p>The written SOP and what operators actually do drift apart, and nobody notices. Detection
+  requires a <strong>same-topic gate before comparison</strong>: a procedure and a spoken claim
+  must apply to the same equipment <em>and</em> reference the same maintenance activity before
+  their stated frequencies are compared at all. Comparing by embedding similarity alone would
+  fire constantly on a small corpus.</p>
+  <p>One subtlety the implementation had to handle: operators typically <em>cite the official
+  interval while rejecting it</em> — "the book says monthly, we do it fortnightly." A naive set
+  intersection sees "monthly" in both texts and concludes agreement. The detector instead
+  isolates the frequency the operator states that the procedure does <em>not</em>, which is the
+  actual deviating practice.</p>
+</section>
+
+<!-- ==================== 4 ==================== -->
+<section class="sec" id="s4">
+  <header><span class="num">04</span><h2>Retrieval router</h2></header>
+
+  <p>Both retrieval types are required because they fail on opposite question shapes. Keyword
+  search catches exact tags and standard codes that embeddings miss; dense retrieval catches
+  paraphrase — "won't build pressure" matching "insufficient discharge head". Neither can answer
+  a question where the answer document shares no words with the question at all: a report on
+  P-101C's failure never contains the string "P-101A", so no text search reaches it. Only walking
+  equipment → same class → other equipment does.</p>
+
+  <p>Therefore both run <strong>in parallel every time</strong>, and an intent classifier sets the
+  blend ratio rather than branching exclusively. Misclassifying an exclusive branch returns
+  nothing; a wrong blend still returns something useful.</p>
+
+  <div class="sheet">
+    <div class="frame">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E7EEEC','primaryTextColor':'#131A1E','primaryBorderColor':'#7E9299','lineColor':'#6C7F85','fontFamily':'Segoe UI, sans-serif','fontSize':'12.5px','clusterBkg':'#F2F6F4','clusterBorder':'#B9C7C4'}}}%%
+flowchart TB
+  Q(["Question"]) --> A["Anchor detection<br/>equipment tag · class/area phrase<br/>process name · clause number"]
+  A --> R{"Intent<br/>classifier"}
+
+  R -->|"sets blend, never<br/>an exclusive branch"| P1["BM25<br/>full-text"]
+  R --> P2["Dense<br/>vector 768d"]
+  R --> P3["Graph expansion<br/>2 hops"]
+  R --> P4["Analytics leg<br/>computed KPIs"]
+
+  P1 --> F["RRF fusion<br/>Σ 1/(60+rank)"]
+  P2 --> F
+  F --> E["Evidence assembly<br/>computed → clauses →<br/>graph / text by blend"]
+  P3 --> E
+  P4 --> E
+  E --> S["Synthesis<br/>every sentence carries [E<i>n</i>]"]
+  S --> C{"Computed confidence<br/>0.5 retrieval + 0.4 citation<br/>fraction + 0.1 overlap"}
+  C -->|above threshold| OK(["Cited answer<br/>→ page · timestamp · query"])
+  C -->|below| AB(["Abstain —<br/>'not present in the corpus'"])
+</pre>
+    </div>
+    <div class="cap"><span>Fig. 3 — Ask agent</span><span>graph expansion executes inside the same Cypher round trip as retrieval</span></div>
+  </div>
+
+  <h3>Confidence is computed, never self-reported</h3>
+  <p>A model asked to rate its own certainty produces a number with no grounding. Here the score
+  is arithmetic over observable signals: normalised top retrieval score, the fraction of answer
+  sentences that actually carry a citation, and the overlap between the keyword and dense result
+  sets. Below threshold the system abstains — in a safety context, <strong>"not present in the
+  corpus" is the correct answer</strong>, and a confident wrong answer about plant equipment is
+  worse than no answer.</p>
+</section>
+
+<!-- ==================== 5 ==================== -->
+<section class="sec" id="s5">
+  <header><span class="num">05</span><h2>QMS integration</h2></header>
+
+  <p>Quality management is implemented as a <strong>specialization of the same architecture</strong>,
+  not a second system: same graph, same agents, same retrieval logic. Only the ingested standards
+  pack and the KPI definitions differ.</p>
+
+  <h3>Clause-aware chunking</h3>
+  <p>The quality standard splits on <strong>clause numbers, not fixed token windows</strong>. A
+  clause is the natural retrieval unit in a compliance context — splitting one mid-sentence
+  produces answers that cite half a requirement, which is worse than useless in an audit.</p>
+
+  <h3>Numbers are never embedded</h3>
+  <p>This is where pure-RAG architectures typically fail. Process capability and defect rates
+  load into typed <code>:QualityKPI</code> rows that an agent queries and computes over directly.
+  Embedding "Cpk = 1.21" as a sentence and hoping a vector search retrieves it correctly cannot
+  reliably support arithmetic, threshold tests, or trend detection. The thresholds themselves
+  (Cpk minimum 1.33; PPM rising three consecutive months) come from configuration, so every
+  computed figure is reproducible and carries the exact query that produced it.</p>
+
+  <h3>Compliance mapping</h3>
+  <p>Non-conformance records link equipment to the clause they violate, which is what lets a
+  question like <em>"why is PPM rising on the feed transfer process"</em> traverse from a number,
+  to the process, to the equipment, to the open NCR, to the governing clause 8.5.1 — and then to
+  the monsoon strainer story that explains it. No vector search reconstructs that chain.</p>
+
+  <h3>Industry-agnostic by configuration</h3>
+  <p>The pipeline is fixed; the standards pack swaps. A configuration layer defines which base
+  standard applies, its clause taxonomy, and the industry's KPI definitions — defect rate for
+  automotive, batch yield for pharma, lot traceability for food. Graph schema and agent logic
+  stay identical. That is what makes this one architecture rather than one build per industry.</p>
+</section>
+
+<!-- ==================== 6 ==================== -->
+<section class="sec" id="s6">
+  <header><span class="num">06</span><h2>Feature inventory</h2></header>
+
+  <p>Twenty-six implemented capabilities, grouped by the part of the system they belong to. The
+  indented note under each states why it exists — in most cases the design choice was forced by
+  a specific failure it prevents.</p>
+
+  <h3>Knowledge construction</h3>
+
+  <div class="feat">
+    <h4><span class="id">A1</span> Deterministic corpus generator</h4>
+    <p>Every document, register and record is produced by a seeded script rather than hand-authored,
+    and the script asserts its own output — the planted failure patterns are verified on every run.</p>
+    <p class="why"><b>Why:</b> when the schema changes you regenerate rather than rewrite, and a
+    corpus that verifies itself cannot silently lose the patterns the entire demo depends on.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">A2</span> Entity resolution across four spellings</h4>
+    <p>The same pump appears as <code>P-101A</code> in work orders, <code>Pump 101A</code> in
+    procedures, <code>P101-A</code> in an inspection record, and <code>p-101a</code> in a voice
+    transcript. All four canonicalise to one node carrying an alias list.</p>
+    <p class="why"><b>Why:</b> this is the single point of failure in the whole system. Three nodes
+    for one pump means every multi-hop query silently returns nothing — not an error, just
+    emptiness. It is verified by hand before anything downstream is trusted.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">A3</span> Structured-first ingestion</h4>
+    <p>Spreadsheet data becomes typed nodes with no LLM in the path; only narrative documents are
+    chunked and embedded.</p>
+    <p class="why"><b>Why:</b> running already-typed data through an extraction model introduces
+    hallucination into the cleanest source available, and it cuts the model's workload by more
+    than 90%.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">A4</span> Regex-before-LLM relation binding</h4>
+    <p>In narrative documents a regex pass finds equipment tags, dates and measurements first; the
+    LLM then only binds relations <em>between entities already found</em>, against a closed
+    relationship vocabulary.</p>
+    <p class="why"><b>Why:</b> a 7B model is weak at open-ended entity extraction but adequate at
+    choosing among known candidates. This plays to that boundary instead of across it.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">A5</span> Failure-code correction</h4>
+    <p>A deliberately mistyped ISO 14224 code in the corpus is mapped back to the closed vocabulary
+    on load, with the raw value preserved on the node.</p>
+    <p class="why"><b>Why:</b> real maintenance records contain typos; a closed vocabulary is what
+    makes the reliability analytics work at all, so entries must be repaired rather than dropped.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">A6</span> Clause-aware chunking</h4>
+    <p>The quality standard splits on clause boundaries rather than token counts.</p>
+    <p class="why"><b>Why:</b> a compliance answer that cites half a requirement is worse than no
+    answer.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">A7</span> Structured quality store — numbers never embedded</h4>
+    <p>Cpk and PPM values are typed rows queried and computed over, not text in a vector index.</p>
+    <p class="why"><b>Why:</b> embeddings cannot do arithmetic or trend detection. This is the
+    specific thing pure-RAG quality systems get wrong.</p>
+  </div>
+
+  <h3>Answering</h3>
+
+  <div class="feat">
+    <h4><span class="id">B1</span> Hybrid retrieval with RRF fusion</h4>
+    <p>Keyword and dense retrieval run in parallel on every question and fuse by reciprocal rank.</p>
+    <p class="why"><b>Why:</b> they fail on opposite question shapes — exact tags versus paraphrase.
+    Running only one guarantees a class of question returns nothing.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B2</span> Graph expansion in a single round trip</h4>
+    <p>From the retrieved seeds the query traverses two hops — equipment → work orders → failure
+    modes → sibling equipment → operator knowledge — inside the same Cypher statement.</p>
+    <p class="why"><b>Why:</b> it answers questions where the answer document shares no vocabulary
+    with the question, and doing it in one statement keeps latency flat rather than multiplying
+    round trips.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B3</span> Multi-form anchoring</h4>
+    <p>A question anchors on an explicit tag, a class or area phrase ("the control valves in the
+    process area"), a process name, or a clause number.</p>
+    <p class="why"><b>Why:</b> people rarely quote asset tags. Without phrase anchoring, questions
+    that named a class instead of a tag retrieved procedure text only and wrongly abstained — a
+    failure found in testing and fixed.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B4</span> Blend ratio, never an exclusive branch</h4>
+    <p>Intent classification adjusts how much text versus graph evidence is assembled; it never
+    switches one off.</p>
+    <p class="why"><b>Why:</b> misclassifying an exclusive branch returns nothing. A wrong blend
+    still returns something useful.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B5</span> Symptom-aware evidence ordering</h4>
+    <p>Question wording maps to ISO failure modes — "vibration" to VIB — and matching history rows
+    sort to the top of the evidence block.</p>
+    <p class="why"><b>Why:</b> a genuine failure found in testing. The relevant vibration record sat
+    seventh of seven in a table, the model overlooked it, and the system abstained on a question it
+    could answer.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B6</span> Analytics leg for numeric questions</h4>
+    <p>Capability and trend questions attach computed KPI evidence — the series, the threshold test,
+    and an explicit verdict flag — assembled ahead of document text.</p>
+    <p class="why"><b>Why:</b> two further failures found in testing. Buried mid-prompt the model
+    hedged around its own computed answer; and when the block said only "PRC-301" the model could
+    not connect it to a question naming "the feed flow control process", so it correctly refused.
+    Naming the process in the evidence fixed it.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B7</span> Computed confidence with abstention</h4>
+    <p>Score is arithmetic over retrieval strength, citation density and result-set agreement.
+    Below threshold the system declines to answer.</p>
+    <p class="why"><b>Why:</b> self-reported confidence is ungrounded. In a plant context a
+    confident wrong answer is more dangerous than no answer.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B8</span> Resolvable citations</h4>
+    <p>Every claim carries a marker resolving to a document page, an audio timestamp, or the exact
+    query run against the structured store. Clicking one opens the PDF at that page or plays the
+    clip at that second.</p>
+    <p class="why"><b>Why:</b> in a compliance context an uncited reference is worse than no answer,
+    and a citation you cannot open is just a claim.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B9</span> Streaming responses</h4>
+    <p>Answers stream token by token over server-sent events; models pre-warm at startup.</p>
+    <p class="why"><b>Why:</b> first tokens now appear in about two seconds instead of a blank
+    ten-to-twenty second wait — and pre-warming removes the cold-start stall entirely.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">B10</span> Show-the-query toggle</h4>
+    <p>The Cypher behind any answer is inspectable from the answer itself.</p>
+    <p class="why"><b>Why:</b> makes the system auditable rather than magic — the difference between
+    a demo and a tool an engineer would trust.</p>
+  </div>
+
+  <h3>Proactive intelligence</h3>
+
+  <div class="feat">
+    <h4><span class="id">C1</span> Reliability detection — overdue, chronic, sibling exposure</h4>
+    <p>MTBF and risk ratio from failure intervals; repeat-mode counting; same-class propagation on
+    failure.</p>
+    <p class="why"><b>Why:</b> all three are arithmetic, so a finding can be defended line by line.
+    Sibling exposure in particular turns one pump's failure into a fleet-wide preventive action.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">C2</span> Procedure-vs-practice divergence <span class="pill pend">needs clips</span></h4>
+    <p>Detects where the written SOP and actual operator practice have drifted apart, gated on
+    shared equipment and shared activity before any frequency comparison.</p>
+    <p class="why"><b>Why:</b> this is the finding no document system surfaces, because it requires
+    holding unverified spoken practice and approved policy as separate things and then comparing
+    them. Proven against synthetic claims; awaiting the real recordings.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">C3</span> Quality detection — capability and defect trend</h4>
+    <p>Cpk below the configured minimum, and defect rate rising for three consecutive months.</p>
+    <p class="why"><b>Why:</b> computed from the structured store rather than retrieved, so the
+    verdict is a calculation, not a paraphrase.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">C4</span> Business impact in hours</h4>
+    <p>Each alert states the avoidable downtime, derived from the historical downtime of that
+    failure mode on that equipment class.</p>
+    <p class="why"><b>Why:</b> turns a technical finding into a number a plant manager acts on.
+    Narratives are explicitly constrained to facts in the data after the model invented a
+    "$10,000 per hour" figure during testing.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">C5</span> Evidence chains on every alert</h4>
+    <p>Alerts link back to the specific work orders, chunks and claims that produced them.</p>
+    <p class="why"><b>Why:</b> a finding you cannot trace is a finding nobody will act on.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">C6</span> Compliance mapping</h4>
+    <p>Findings map to the governing clause through the non-conformance register.</p>
+    <p class="why"><b>Why:</b> an auditor's first question is which requirement was breached, and
+    that traversal is graph-shaped.</p>
+  </div>
+
+  <h3>Interface and evidence of correctness</h3>
+
+  <div class="feat">
+    <h4><span class="id">D1</span> Knowledge graph explorer</h4>
+    <p>Interactive force-directed view with an architecture-level overview and a per-equipment
+    focus mode. Written without any external library.</p>
+    <p class="why"><b>Why:</b> a CDN-hosted graph library fails on an air-gapped demo laptop. The
+    focus view also doubles as visual proof that entity resolution worked.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">D2</span> Entity resolution panel</h4>
+    <p>Shows every merged spelling and what it resolved to.</p>
+    <p class="why"><b>Why:</b> makes the least visible and most important part of the pipeline
+    demonstrable in one glance.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">D3</span> Time-to-answer stopwatch and detected-language badge</h4>
+    <p>Live timing on every question; source language shown on spoken claims.</p>
+    <p class="why"><b>Why:</b> both are explicit judging criteria, and both expose something already
+    computed rather than adding a failure mode.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">D4</span> Evaluation harness with retrieval ablation</h4>
+    <p>Twenty-one questions scored across four retrieval configurations, producing a chart.</p>
+    <p class="why"><b>Why:</b> it converts "our retrieval design is good" into a measurement, and
+    the ablation isolates exactly what the graph contributes.</p>
+  </div>
+
+  <div class="feat">
+    <h4><span class="id">D5</span> Configurable standards pack</h4>
+    <p>Standard identity, clause taxonomy and KPI thresholds live in configuration.</p>
+    <p class="why"><b>Why:</b> it is the difference between one architecture and one build per
+    industry.</p>
+  </div>
+</section>
+
+<!-- ==================== 7 ==================== -->
+<section class="sec" id="s7">
+  <header><span class="num">07</span><h2>Measured results</h2></header>
+
+  <p>A question passes only if the abstain decision is correct <em>and</em>, for answerable
+  questions, an expected source appears in the citations the answer actually used.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Suite</th><th class="n">Passed</th><th class="n">Mean latency</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Full pipeline — 21 questions</td><td class="n">21 / 21</td><td class="n">12.0 s</td><td>includes 3 QMS router paths and 3 abstain traps</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Retrieval ablation</h3>
+  <p>Measured on the 15-question maintenance suite, disabling one retrieval leg at a time:</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Configuration</th><th class="n">Passed</th><th>What the failures were</th></tr></thead>
+    <tbody>
+      <tr><td>Full — hybrid + graph</td><td class="n">15 / 15</td><td>—</td></tr>
+      <tr><td>Dense only (no keyword)</td><td class="n">14 / 15</td><td>an exact-threshold lookup</td></tr>
+      <tr><td>Keyword only (no dense)</td><td class="n">14 / 15</td><td>same</td></tr>
+      <tr><td><b>No graph expansion</b></td><td class="n">11 / 15</td><td><b>every failure is an equipment-history question</b></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The ablation makes the architectural argument precisely: removing graph traversal fails
+  <em>exactly</em> the questions whose answers share no vocabulary with the question. That is the
+  class of question a vector database alone cannot serve, and it is the reason the knowledge graph
+  exists rather than a document index.</p>
+
+  <div class="note">
+    <b>Honest note on the single-leg results.</b> Dense-only and keyword-only score higher than
+    they would in a pure-RAG system because graph anchoring still carries them — the text legs are
+    crippled but the equipment traversal is not. The clean, defensible finding is the no-graph row.
+  </div>
+</section>
+
+<!-- ==================== 8 ==================== -->
+<section class="sec" id="s8">
+  <header><span class="num">08</span><h2>Scale &amp; status</h2></header>
+
+  <h3>Why four agents</h3>
+  <p>The production design is twelve, across four tiers — ingestion, query, intelligence, delivery.
+  The prototype implements four; the remaining eight are email triage, Cypher generation, root
+  cause analysis, compliance auditing, lessons-learned clustering, multi-channel notification,
+  drawing parsing and OCR.</p>
+
+  <p>Because the architecture is a blackboard — agents read and write shared graph state and never
+  call each other — <strong>adding the missing eight requires changing zero existing agents</strong>.
+  Knowing precisely what was deferred, and why, is engineering judgment rather than omission.</p>
+
+  <h3>Deliberately out of scope</h3>
+  <p>Drawing and P&amp;ID parsing, OCR, and email ingestion were cut on purpose. Each is a full day
+  of work carrying real risk, and none adds a capability the platform does not already demonstrate
+  through another door. The GPU headroom they would have consumed was spent on stability instead.</p>
+
+  <h3>Current status</h3>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Component</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Corpus generation, graph build, entity resolution</td><td><span class="pill live">operational</span></td></tr>
+      <tr><td>Ask agent — retrieval, synthesis, citations, abstention</td><td><span class="pill live">operational</span></td></tr>
+      <tr><td>Watch agent — 5 of 6 detectors firing</td><td><span class="pill live">operational</span></td></tr>
+      <tr><td>QMS — clauses, KPIs, compliance mapping</td><td><span class="pill live">operational</span></td></tr>
+      <tr><td>Web interface, graph explorer, eval harness</td><td><span class="pill live">operational</span></td></tr>
+      <tr><td>Voice capture — code complete, pipeline proven</td><td><span class="pill pend">awaiting 3 recordings</span></td></tr>
+      <tr><td>Divergence detection — logic proven on synthetic claims</td><td><span class="pill pend">unblocks with voice</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+</div>

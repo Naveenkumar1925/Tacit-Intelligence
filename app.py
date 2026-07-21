@@ -103,6 +103,84 @@ def api_watch_run():
     return {"alerts_found": len(alerts)}
 
 
+def _name(v):
+    """Cypher expression for a node's best display label."""
+    return (f"coalesce({v}.tag,{v}.code,{v}.clause_id,{v}.ncr_id,{v}.alert_id,"
+            f"{v}.process_id,{v}.sop_id,{v}.wo_id,{v}.record_id,{v}.name,"
+            f"{v}.std_id,{v}.claim_id,{v}.chunk_id,elementId({v}))")
+
+
+def _graph_from_queries(session, queries, params=None):
+    """Run (a)-[r]->(b)-returning queries, merge into unique nodes + links."""
+    ret = (f" RETURN elementId(a) AS sid, labels(a)[0] AS sg, {_name('a')} AS sn,"
+           f" elementId(b) AS tid, labels(b)[0] AS tg, {_name('b')} AS tn,"
+           " type(r) AS rt")
+    nodes, links, seen = {}, [], set()
+    for q in queries:
+        for row in session.run(q + ret, **(params or {})):
+            for pfx in ("s", "t"):
+                nid = row[f"{pfx}id"]
+                nodes.setdefault(nid, {"id": nid, "name": row[f"{pfx}n"],
+                                       "group": row[f"{pfx}g"]})
+            key = (row["sid"], row["tid"], row["rt"])
+            if key not in seen:
+                seen.add(key)
+                links.append({"source": row["sid"], "target": row["tid"],
+                              "type": row["rt"]})
+    return {"nodes": list(nodes.values()), "links": links}
+
+
+OVERVIEW_QUERIES = [
+    "MATCH (a:Site)-[r:CONTAINS]->(b:Area)",
+    "MATCH (a:Area)-[r:CONTAINS]->(b:Equipment)",
+    "MATCH (a:Equipment)<-[:PERFORMED_ON]-(:WorkOrder)-[r:RESULTED_IN]->(b:FailureMode)",
+    "MATCH (a:Standard)-[r:HAS_CLAUSE]->(b:Clause)",
+    "MATCH (a:Clause)-[r:APPLIES_TO]->(b:Equipment)",
+    "MATCH (a:Process)-[r:USES]->(b:Equipment)",
+    "MATCH (a:NCR)-[r:AGAINST]->(b:Equipment)",
+    "MATCH (a:NCR)-[r:CITES]->(b:Clause)",
+    "MATCH (a:Alert)-[r:ABOUT]->(b:Equipment)",
+]
+
+FOCUS_QUERIES = [
+    "MATCH (a:Site)-[r:CONTAINS]->(b:Area)-[:CONTAINS]->(:Equipment {tag:$tag})",
+    "MATCH (a:Area)-[r:CONTAINS]->(b:Equipment {tag:$tag})",
+    "MATCH (a:WorkOrder)-[r:PERFORMED_ON]->(b:Equipment {tag:$tag})",
+    "MATCH (a:WorkOrder)-[r:RESULTED_IN]->(b:FailureMode) "
+    "WHERE (a)-[:PERFORMED_ON]->(:Equipment {tag:$tag})",
+    "MATCH (t:Equipment {tag:$tag}) MATCH (a:Area)-[r:CONTAINS]->(b:Equipment) "
+    "WHERE b.iso14224_class = t.iso14224_class AND b.tag <> $tag",
+    "MATCH (a:Procedure)-[r:APPLIES_TO]->(b:Equipment {tag:$tag})",
+    "MATCH (a:Clause)-[r:APPLIES_TO]->(b:Equipment {tag:$tag})",
+    "MATCH (a:TacitKnowledge)-[r:APPLIES_TO]->(b:Equipment {tag:$tag})",
+    "MATCH (a:InspectionRecord)-[r:ON]->(b:Equipment {tag:$tag})",
+    "MATCH (a:NCR)-[r:AGAINST]->(b:Equipment {tag:$tag})",
+    "MATCH (a:NCR)-[r:CITES]->(b:Clause) "
+    "WHERE (a)-[:AGAINST]->(:Equipment {tag:$tag})",
+    "MATCH (a:Alert)-[r:ABOUT]->(b:Equipment {tag:$tag})",
+]
+
+
+@app.get("/api/graph")
+def api_graph(focus: str = ""):
+    with driver.session(database=NEO4J_DATABASE) as s:
+        if focus:
+            g = _graph_from_queries(s, FOCUS_QUERIES, {"tag": focus})
+        else:
+            g = _graph_from_queries(s, OVERVIEW_QUERIES)
+        equipment = [r["tag"] for r in s.run(
+            "MATCH (a:Area)-[:CONTAINS]->(e:Equipment) RETURN e.tag AS tag "
+            "ORDER BY e.tag")]
+    g["equipment"] = equipment
+    g["focus"] = focus
+    return g
+
+
+@app.get("/graph", response_class=HTMLResponse)
+def graph_page():
+    return (ROOT / "static" / "graph.html").read_text(encoding="utf-8")
+
+
 @app.get("/api/stats")
 def api_stats():
     with driver.session(database=NEO4J_DATABASE) as s:

@@ -368,23 +368,6 @@ Install with:
 pip install -r requirements.txt
 ```
 
----
-
-## License
-
-Prototype code for ET AI Hackathon 2026.
-
----
-
-## Support
-
-- **Full technical documentation:** See `docs/CONTEXT.md` (51 KB deep dive)
-- **Architecture diagrams:** See `architecture.png`
-- **Evaluation harness:** Run `python scripts/eval.py`
-- **Voice recording guide:** See `docs/voice_recording_scripts.md`
-
----
-
 ## Key Insights
 
 This is a production-ready system that:
